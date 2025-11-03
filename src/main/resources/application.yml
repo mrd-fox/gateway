@@ -17,35 +17,27 @@ spring:
   cloud:
     config:
       enabled: false
-      discovery:
-        enabled: false
     gateway:
       globalcors:
+        # ✅ Nécessaire pour que les requêtes OPTIONS soient gérées
         add-to-simple-url-handler-mapping: true
-        cors-configurations:
+        corsConfigurations:
           '[/**]':
-            allowedOrigins:
-              - "http://localhost:5173"
-            allowedMethods:
-              - GET
-              - POST
-              - PUT
-              - DELETE
-              - OPTIONS
-            allowedHeaders:
-              - "*"
+            allowedOriginPatterns: [ "http://localhost:5173", "http://127.0.0.1:5173" ]
+            allowedMethods: [ "*" ]
+            allowedHeaders: [ "*" ]
+            exposedHeaders: [ "*" ]
             allowCredentials: true
       default-filters:
         - AddResponseHeader=X-Gateway,Skillshub-Gateway
       routes:
         - id: backend
-          uri: ${BACKEND_URI:http://localhost:8081}
+          uri: ${BACKEND_URI:http://localhost:10020}
           predicates:
             - Path=/api/**
           filters:
             - PreserveHostHeader
-            - RewritePath=/api/(?<segment>.*), /${segment}
-
+            - RewritePath=/api/(?<segment>.*), /api/${segment}
 server:
   port: ${SERVER_PORT:8080}
 
@@ -60,7 +52,13 @@ management:
 
 logging:
   level:
-    root: INFO
     org.springframework.cloud.gateway: DEBUG
-    org.springframework.security: INFO
-    com.skillshub.gateway: DEBUG
+    org.springframework.http.server.reactive: DEBUG
+    reactor.netty.http.client: DEBUG
+    reactor.netty.http.server: DEBUG
+
+# ALLOWED_ORIGINS can be set dynamically:
+# Example (dev):
+#  ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+# Example (prod):
+#  ALLOWED_ORIGINS=https://www.skillshub.com,https://admin.skillshub.com
