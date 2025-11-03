@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: gateway-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  main:
+    web-application-type: reactive
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8085/realms/skillshub}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8085/realms/skillshub/protocol/openid-connect/certs}
+
+  cloud:
+    config:
+      enabled: false
+      discovery:
+        enabled: false
+    gateway:
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:5173"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            allowCredentials: true
+      default-filters:
+        - AddResponseHeader=X-Gateway,Skillshub-Gateway
+      routes:
+        - id: backend
+          uri: ${BACKEND_URI:http://localhost:8081}
+          predicates:
+            - Path=/api/**
+          filters:
+            - PreserveHostHeader
+            - RewritePath=/api/(?<segment>.*), /${segment}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: INFO
+    com.skillshub.gateway: DEBUG
