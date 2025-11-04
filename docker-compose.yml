@@ -13,10 +13,13 @@ services:
   gateway-service:
     build: .
     container_name: gateway-service
-    ports:
-      - "8080:8080"
+    #todo change it when changing environment
     env_file:
-      - ${ENV_FILE:-./envs/dev.env}
+      - ./envs/dev/docker-hybrid.env
+    ports:
+      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - keycloak
     networks:
@@ -36,7 +39,7 @@ services:
     volumes:
       - e-learning-monolith-back_postgres-keycloak-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      test: [ "CMD-SHELL", "pg_isready -U keycloak -d keycloak" ]
       interval: 3s
       retries: 10
     networks:
@@ -49,9 +52,7 @@ services:
     restart: unless-stopped
     command:
       - start-dev
-#      - start
-#      - --optimized
-#      - --import-realm
+      - --import-realm
     environment:
       KC_DB: postgres
       #KC_DB_URL_HOST: postgres-keycloak

@@ -2,10 +2,8 @@ package com.skillshub.gateway_service.filter;
 
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
@@ -82,7 +80,7 @@ public class LoggingFilter implements GlobalFilter, Ordered {
         return 10;
     }
 
-    // 🧩 Helper to handle gzip / plain text decoding
+
     private String decodeBody(byte[] content, String encoding) {
         if ("gzip".equalsIgnoreCase(encoding)) {
             try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(content))) {
