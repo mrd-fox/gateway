@@ -2,6 +2,8 @@ package com.skillshub.gateway_service.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
@@ -14,27 +16,29 @@ public class SecurityConfig {
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
 
-        // Configure JWT converter if we need custom role mapping (optional)
         JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
         var reactiveJwtConverter = new ReactiveJwtAuthenticationConverterAdapter(jwtConverter);
 
         return http
-                // Disable CSRF because Gateway is stateless and acts as a proxy
+                // ✅ Active CORS mais le délègue au bloc globalcors de la Gateway
+                .cors(Customizer.withDefaults())
+
+                // ✅ Désactive CSRF
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
 
-                // Authorize exchanges based on path
+                // ✅ Autorise les préflights OPTIONS (sinon 401)
                 .authorizeExchange(exchange -> exchange
-                        .pathMatchers("/actuator/**").permitAll()   // health/info endpoints
-                        .pathMatchers("/public/**").permitAll()     // public routes if needed
-                        .anyExchange().authenticated()               // all others need valid JWT
+                        .pathMatchers(HttpMethod.OPTIONS).permitAll()
+                        .pathMatchers("/actuator/**").permitAll()
+                        .pathMatchers("/public/**").permitAll()
+                        .anyExchange().authenticated()
                 )
 
-                // Enable JWT authentication with Keycloak as the resource server
+                // ✅ Authentification JWT via Keycloak
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveJwtConverter))
                 )
 
-                // Build the final security chain
                 .build();
     }
 }
