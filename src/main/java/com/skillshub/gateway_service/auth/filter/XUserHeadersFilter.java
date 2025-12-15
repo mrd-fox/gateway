@@ -41,6 +41,7 @@ public class XUserHeadersFilter implements WebFilter {
 
     private static final PathPattern OAUTH2_PATH =
             PathPatternParser.defaultInstance.parse("/oauth2/**");
+    private static final List<String> ALLOWED_ROLES = List.of("STUDENT", "TUTOR", "ADMIN");
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -75,15 +76,30 @@ public class XUserHeadersFilter implements WebFilter {
     @SuppressWarnings("unchecked")
     private List<String> extractRoles(Map<String, Object> claims) {
         try {
-            Map<String, Object> realmAccess =
-                    (Map<String, Object>) claims.get("realm_access");
+            Map<String, Object> realmAccess = (Map<String, Object>) claims.get("realm_access");
+            if (realmAccess == null) {
+                return List.of("STUDENT");
+            }
 
-            if (realmAccess == null) return List.of();
+            List<String> roles = (List<String>) realmAccess.getOrDefault("roles", List.of());
 
-            return (List<String>) realmAccess.getOrDefault("roles", List.of());
+            List<String> filtered = roles.stream()
+                    .map(String::valueOf)
+                    .map(String::trim)
+                    .filter(r -> !r.isBlank())
+                    .map(String::toUpperCase)
+                    .filter(ALLOWED_ROLES::contains)
+                    .distinct()
+                    .toList();
+
+            if (filtered.isEmpty()) {
+                return List.of("STUDENT");
+            } else {
+                return filtered;
+            }
         } catch (Exception e) {
             log.warn("⚠️ Failed to extract roles", e);
-            return List.of();
+            return List.of("STUDENT");
         }
     }
 }

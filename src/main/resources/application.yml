@@ -67,3 +67,6 @@ skillshub:
     cookie-max-age: ${COOKIE_MAX_AGE:86400}  #24h
     redirect-after-login: ${AUTH_REDIRECT_AFTER_LOGIN:http://localhost:5173/}
     redirect-after-logout: ${AUTH_REDIRECT_AFTER_LOGOUT:http://localhost:5173/}
+app:
+  backend:
+    base-url: ${BACKEND_URI:http://localhost:10020}
