@@ -1,42 +1,53 @@
 package com.skillshub.gateway_service.config;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
+import org.springframework.security.oauth2.client.registration.ReactiveClientRegistrationRepository;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.authentication.RedirectServerAuthenticationEntryPoint;
 
+@Slf4j
 @Configuration
 @EnableWebFluxSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final ReactiveClientRegistrationRepository clientRegistrationRepository;
+    private final CustomOAuth2SuccessHandler customOAuth2SuccessHandler;
+
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
 
-        JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
-        var reactiveJwtConverter = new ReactiveJwtAuthenticationConverterAdapter(jwtConverter);
-
         return http
-                // ✅ Active CORS mais le délègue au bloc globalcors de la Gateway
                 .cors(Customizer.withDefaults())
-
-                // ✅ Désactive CSRF
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
 
-                // ✅ Autorise les préflights OPTIONS (sinon 401)
-                .authorizeExchange(exchange -> exchange
+                .authorizeExchange(auth -> auth
                         .pathMatchers(HttpMethod.OPTIONS).permitAll()
-                        .pathMatchers("/actuator/**").permitAll()
-                        .pathMatchers("/public/**").permitAll()
-                        .anyExchange().authenticated()
+                        .pathMatchers(
+                                "/api/auth/login",
+                                "/api/auth/logout",
+                                "/api/auth/me",
+                                "/actuator/**"
+                        ).permitAll()
+                        .anyExchange().permitAll()   // Le Gateway ne protège pas les routes
                 )
 
-                // ✅ Authentification JWT via Keycloak
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveJwtConverter))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(
+                                new RedirectServerAuthenticationEntryPoint("/api/auth/login")
+                        )
+                )
+
+                .oauth2Login(oauth -> oauth
+                        .clientRegistrationRepository(clientRegistrationRepository)
+                        .authenticationSuccessHandler(customOAuth2SuccessHandler)
                 )
 
                 .build();

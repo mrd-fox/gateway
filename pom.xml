@@ -53,6 +53,11 @@
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-oauth2-jose</artifactId>
@@ -78,6 +83,8 @@
             <version>1.18.32</version> <!-- ou la dernière version -->
             <optional>true</optional>
         </dependency>
+
+
     </dependencies>
 
     <dependencyManagement>
