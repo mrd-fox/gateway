@@ -1,40 +1,35 @@
 spring:
   application:
     name: gateway-service
+
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
+
   main:
     web-application-type: reactive
+
   security:
     oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8085/realms/skillshub}
-          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8085/realms/skillshub/protocol/openid-connect/certs}
+      client:
+        registration:
+          keycloak:
+            client-id: gateway-service
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope:
+              - openid
+              - profile
+              - email
+
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8085/realms/skillshub}
   cloud:
     config:
       enabled: false
       import-check:
         enabled: false
-
     gateway:
-      globalcors:
-        # need to manage OPTIONS requests
-        add-to-simple-url-handler-mapping: true
-        corsConfigurations:
-          '[/**]':
-            allowedOriginPatterns:
-              - ${ALLOWED_ORIGIN_1:http://localhost:5173}
-              - ${ALLOWED_ORIGIN_2:http://127.0.0.1:5173}
-            allowedMethods: [ "GET", "POST", "PUT", "DELETE", "OPTIONS" ]
-            allowedHeaders: [ "*" ]
-            exposedHeaders:
-              - "Authorization"
-              - "X-User-Email"
-              - "X-User-Roles"
-              - "X-Service"
-              - "X-Gateway"
-            allowCredentials: true
       default-filters:
         - AddResponseHeader=X-Gateway,Skillshub-Gateway
       routes:
@@ -43,9 +38,10 @@ spring:
           predicates:
             - Path=/api/**
           filters:
-            - PreserveHostHeader
-            - RewritePath=/api/(?<segment>.*), /api/${segment}
+            - StripPrefix=1
+
 server:
+  address: ${SERVER_ADDRESS:0.0.0.0}
   port: ${SERVER_PORT:8080}
 
 management:
@@ -61,3 +57,13 @@ logging:
   level:
     org.springframework.cloud.gateway: INFO
     reactor.netty.http.server: INFO
+
+skillshub:
+  auth:
+    cookie-name: SKILLSHUB_AUTH
+    cookie-domain: ""          # IMPORTANT : empty in local mode
+    cookie-secure: ${COOKIE_SECURE:true}       # must be TRUE for  propagate cookie HTTPS
+    cookie-same-site: ${COOKIE_SAME_SITE:None}  # required for OAuth2 redirect
+    cookie-max-age: ${COOKIE_MAX_AGE:86400}  #24h
+    redirect-after-login: ${AUTH_REDIRECT_AFTER_LOGIN:http://localhost:5173/}
+    redirect-after-logout: ${AUTH_REDIRECT_AFTER_LOGOUT:http://localhost:5173/}
