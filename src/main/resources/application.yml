@@ -33,8 +33,23 @@ spring:
       default-filters:
         - AddResponseHeader=X-Gateway,Skillshub-Gateway
       routes:
+        - id: users-me-local
+          uri: forward:/api/users/me
+          order: -100
+          predicates:
+            - Path=/api/users/me
+            - Method=GET
+
+        - id: users-promote-to-tutor-local
+          uri: forward:/api/users/promote-to-tutor
+          order: -100
+          predicates:
+            - Path=/api/users/promote-to-tutor/**
+            - Method=POST
+
         - id: backend
           uri: ${BACKEND_URI:http://localhost:10020}
+          order: 100
           predicates:
             - Path=/api/**
           filters:
@@ -48,15 +63,17 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info, gateway
   endpoint:
     health:
       show-details: always
 
 logging:
   level:
-    org.springframework.cloud.gateway: INFO
+    org.springframework.cloud.gateway: DEBUG
     reactor.netty.http.server: INFO
+    org.springframework.cloud.gateway.handler.RoutePredicateHandlerMapping: TRACE
+
 
 skillshub:
   auth:
@@ -70,3 +87,9 @@ skillshub:
 app:
   backend:
     base-url: ${BACKEND_URI:http://localhost:10020}
+  keycloak:
+    base-url: ${KEYCLOAK_BASE_URL:http://localhost:8085}
+    realm: ${KEYCLOAK_REALM:skillshub}
+    admin:
+      client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:keycloak-admin-gateway}
+      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:TO_DEFINE}
