@@ -3,7 +3,7 @@ spring:
     name: gateway-service
 
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
+    active: ${SPRING_PROFILES_ACTIVE:docker-hybrid}
 
   main:
     web-application-type: reactive
@@ -23,7 +23,13 @@ spring:
 
         provider:
           keycloak:
-            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8085/realms/skillshub}
+            issuer-uri: ${KEYCLOAK_ISSUER_URI}
+            authorization-uri: ${KEYCLOAK_AUTHORIZATION_URI}
+            token-uri: ${KEYCLOAK_TOKEN_URI}
+            jwk-set-uri: ${KEYCLOAK_JWK_SET_URI}
+            user-info-uri: ${KEYCLOAK_USER_INFO_URI}
+            user-name-attribute: preferred_username
+
   cloud:
     config:
       enabled: false
@@ -73,6 +79,8 @@ logging:
     org.springframework.cloud.gateway: DEBUG
     reactor.netty.http.server: INFO
     org.springframework.cloud.gateway.handler.RoutePredicateHandlerMapping: TRACE
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: TRACE
 
 
 skillshub:
@@ -88,8 +96,8 @@ app:
   backend:
     base-url: ${BACKEND_URI:http://localhost:10020}
   keycloak:
-    base-url: ${KEYCLOAK_BASE_URL:http://localhost:8085}
+    base-url: ${KEYCLOAK_BASE_URL}
     realm: ${KEYCLOAK_REALM:skillshub}
     admin:
-      client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:keycloak-admin-gateway}
-      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:TO_DEFINE}
+      client-id: ${KEYCLOAK_ADMIN_CLIENT_ID}
+      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
