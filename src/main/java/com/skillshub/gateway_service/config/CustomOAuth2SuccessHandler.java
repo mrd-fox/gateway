@@ -31,16 +31,6 @@ public class CustomOAuth2SuccessHandler implements ServerAuthenticationSuccessHa
         }
 
 
-//        if (!(oauth.getPrincipal() instanceof OidcUser oidcUser)) {
-//            log.error("❌ Expected OidcUser but got {}", oauth.getPrincipal().getClass().getName());
-//            return webFilterExchange.getExchange().getResponse().setComplete();
-//        }
-//
-//        String jwt = oidcUser.getIdToken().getTokenValue();
-//        log.info("🔑 ID Token extracted successfully.");
-//
-//        // Delegate cookie creation + redirection to SessionService
-//        return sessionService.handleLoginSuccess(jwt, webFilterExchange.getExchange());
         return authorizedClientService
                 .loadAuthorizedClient(
                         oauth.getAuthorizedClientRegistrationId(),

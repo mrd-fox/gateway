@@ -58,8 +58,6 @@ spring:
           order: 100
           predicates:
             - Path=/api/**
-          filters:
-            - StripPrefix=1
 
 server:
   address: ${SERVER_ADDRESS:0.0.0.0}
