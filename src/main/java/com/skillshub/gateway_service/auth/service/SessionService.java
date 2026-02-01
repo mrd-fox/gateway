@@ -11,24 +11,34 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
+import java.time.Duration;
 
 /**
  * SessionService centralizes all authentication flow logic:
- * <p>
+ *
  * - start login (redirect to Keycloak)
- * - handle Keycloak callback (exchange code → token, set cookie, redirect)
- * - logout (clear cookie, redirect)
- * <p>
- * Controller becomes a thin layer delegating to this service.
+ * - handle Keycloak callback (set cookies, redirect)
+ * - logout (clear cookies, redirect)
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SessionService {
 
+    /**
+     * Refresh cookie name is derived from the access cookie name to avoid adding config for now.
+     * Example: SKILLSHUB_AUTH -> SKILLSHUB_AUTH_RT
+     */
+    private static final String REFRESH_COOKIE_SUFFIX = "_RT";
+
+    /**
+     * We set refresh cookie max-age to 7 days to support "remember me" sessions.
+     * Even if the cookie remains longer, Keycloak will stop issuing refreshed tokens once SSO session expires.
+     */
+    private static final Duration REFRESH_COOKIE_MAX_AGE = Duration.ofDays(7);
+
     private final CookieService cookieService;
     private final AuthCookieProperties props;
-
 
     /**
      * START LOGIN (Frontend calls /api/auth/login)
@@ -46,28 +56,38 @@ public class SessionService {
 
     /**
      * LOGIN SUCCESS HANDLER (Spring Security already did the OAuth2 flow)
-     * We only create the cookie + redirect to frontend.
+     * We create the cookies (access + refresh) and redirect to frontend.
      */
-    public Mono<Void> handleLoginSuccess(String jwt, ServerWebExchange exchange) {
+    public Mono<Void> handleLoginSuccess(String accessToken, String refreshToken, ServerWebExchange exchange) {
 
-        if (jwt == null) {
-            log.error("❌ No JWT provided to handleLoginSuccess()");
+        if (accessToken == null || accessToken.isBlank()) {
+            log.error("❌ No access token provided to handleLoginSuccess()");
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
         }
 
-        log.info("🔐 OAuth2 login OK → Creating session cookie…");
+        log.info("🔐 OAuth2 login OK → Creating session cookies… refreshTokenPresent={}", refreshToken != null);
 
-        ResponseCookie cookie = cookieService.createAuthCookie(jwt);
+        // Access token cookie (existing behavior)
+        ResponseCookie accessCookie = cookieService.createAuthCookie(accessToken);
 
-        if (cookie == null) {
-            log.error("❌ Failed to create authentication cookie.");
+        if (accessCookie == null) {
+            log.error("❌ Failed to create access token cookie.");
             exchange.getResponse().setStatusCode(HttpStatus.INTERNAL_SERVER_ERROR);
             return exchange.getResponse().setComplete();
         }
 
         ServerHttpResponse response = exchange.getResponse();
-        response.addCookie(cookie);
+        response.addCookie(accessCookie);
+
+        // Refresh token cookie (new behavior)
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            ResponseCookie refreshCookie = createRefreshTokenCookie(refreshToken);
+            response.addCookie(refreshCookie);
+        } else {
+            // Without refresh token, the user will be forced to re-login when access token expires.
+            log.warn("⚠️ No refresh token received from Keycloak. Session will not be refreshable.");
+        }
 
         log.info("➡️  Redirecting user to frontend: {}", props.getRedirectAfterLogin());
 
@@ -78,15 +98,18 @@ public class SessionService {
     }
 
     /**
-     * LOGOUT → Clear cookie → Redirect to frontend
+     * LOGOUT → Clear cookies → Redirect to frontend
      */
     public Mono<Void> performLogout(ServerWebExchange exchange) {
-        log.info("🔓 Logout requested → Clearing cookie…");
+        log.info("🔓 Logout requested → Clearing cookies…");
 
         ServerHttpResponse response = exchange.getResponse();
 
-        ResponseCookie clearCookie = cookieService.clearAuthCookie();
-        response.addCookie(clearCookie);
+        ResponseCookie clearAccessCookie = cookieService.clearAuthCookie();
+        response.addCookie(clearAccessCookie);
+
+        ResponseCookie clearRefreshCookie = clearRefreshTokenCookie();
+        response.addCookie(clearRefreshCookie);
 
         log.info("➡️  Redirecting user after logout: {}", props.getRedirectAfterLogout());
 
@@ -94,5 +117,44 @@ public class SessionService {
         response.getHeaders().setLocation(URI.create(props.getRedirectAfterLogout()));
 
         return response.setComplete();
+    }
+
+    private ResponseCookie createRefreshTokenCookie(String refreshToken) {
+
+        String refreshCookieName = props.getCookieName() + REFRESH_COOKIE_SUFFIX;
+
+        ResponseCookie.ResponseCookieBuilder builder =
+                ResponseCookie.from(refreshCookieName, refreshToken)
+                        .httpOnly(true)
+                        .secure(props.isCookieSecure())
+                        .path("/")
+                        .sameSite(props.getCookieSameSite())
+                        .maxAge(REFRESH_COOKIE_MAX_AGE);
+
+        // IMPORTANT: In local/docker we do not set domain
+        if (props.getCookieDomain() != null && !props.getCookieDomain().isBlank()) {
+            builder.domain(props.getCookieDomain());
+        }
+
+        return builder.build();
+    }
+
+    private ResponseCookie clearRefreshTokenCookie() {
+
+        String refreshCookieName = props.getCookieName() + REFRESH_COOKIE_SUFFIX;
+
+        ResponseCookie.ResponseCookieBuilder builder =
+                ResponseCookie.from(refreshCookieName, "")
+                        .httpOnly(true)
+                        .secure(props.isCookieSecure())
+                        .path("/")
+                        .sameSite(props.getCookieSameSite())
+                        .maxAge(0);
+
+        if (props.getCookieDomain() != null && !props.getCookieDomain().isBlank()) {
+            builder.domain(props.getCookieDomain());
+        }
+
+        return builder.build();
     }
 }

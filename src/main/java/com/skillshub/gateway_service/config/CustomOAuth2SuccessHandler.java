@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.ReactiveOAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.security.web.server.WebFilterExchange;
 import org.springframework.security.web.server.authentication.ServerAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
@@ -23,13 +24,12 @@ public class CustomOAuth2SuccessHandler implements ServerAuthenticationSuccessHa
     public Mono<Void> onAuthenticationSuccess(WebFilterExchange webFilterExchange,
                                               Authentication authentication) {
 
-        log.info("🔐 OAuth2 authentication succeeded. Extracting ID Token…");
+        log.info("🔐 OAuth2 authentication succeeded. Extracting tokens…");
 
         if (!(authentication instanceof OAuth2AuthenticationToken oauth)) {
             log.error("❌ Unexpected authentication type: {}", authentication.getClass().getName());
             return webFilterExchange.getExchange().getResponse().setComplete();
         }
-
 
         return authorizedClientService
                 .loadAuthorizedClient(
@@ -44,10 +44,20 @@ public class CustomOAuth2SuccessHandler implements ServerAuthenticationSuccessHa
                     }
 
                     String accessToken = client.getAccessToken().getTokenValue();
-                    log.info("🔑 Access Token extracted successfully.");
+
+                    // NOTE: Refresh token may be null depending on client settings / flow
+                    OAuth2RefreshToken refresh = client.getRefreshToken();
+                    String refreshToken = null;
+
+                    if (refresh != null) {
+                        refreshToken = refresh.getTokenValue();
+                    }
+
+                    log.info("🔑 Access Token extracted successfully. refreshTokenPresent={}", refreshToken != null);
 
                     return sessionService.handleLoginSuccess(
                             accessToken,
+                            refreshToken,
                             webFilterExchange.getExchange()
                     );
                 });
