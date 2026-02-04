@@ -6,7 +6,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -233,8 +232,8 @@ class SessionServiceTest {
     class PerformLogoutTests {
 
         @Test
-        @DisplayName("should clear access+refresh cookies and redirect to Keycloak end-session with post_logout_redirect_uri")
-        void performLogout_shouldClearCookiesAndRedirectToKeycloakLogout() {
+        @DisplayName("should clear access+refresh cookies and redirect to frontend")
+        void performLogout_shouldClearCookiesAndRedirectToFrontend() {
             ResponseCookie clearAccessCookie = ResponseCookie.from(COOKIE_NAME, "")
                     .httpOnly(true)
                     .secure(true)
@@ -253,13 +252,8 @@ class SessionServiceTest {
             sessionService.performLogout(exchange).block();
 
             assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FOUND);
-
-            URI location = exchange.getResponse().getHeaders().getLocation();
-            assertThat(location).isNotNull();
-
-            String locationStr = location.toString();
-            assertThat(locationStr).startsWith(KEYCLOAK_BASE_URL + "/realms/" + REALM + "/protocol/openid-connect/logout");
-            assertThat(locationStr).contains("post_logout_redirect_uri=");
+            assertThat(exchange.getResponse().getHeaders().getLocation())
+                    .isEqualTo(URI.create(REDIRECT_AFTER_LOGOUT));
 
             assertThat(exchange.getResponse().getCookies()).containsKey(COOKIE_NAME);
             assertThat(exchange.getResponse().getCookies()).containsKey(REFRESH_COOKIE_NAME);
@@ -301,58 +295,6 @@ class SessionServiceTest {
             ResponseCookie refreshCookie = exchange.getResponse().getCookies().getFirst(REFRESH_COOKIE_NAME);
             assertThat(refreshCookie).isNotNull();
             assertThat(refreshCookie.getDomain()).isEqualTo(cookieDomain);
-        }
-
-        @Test
-        @DisplayName("should fallback to frontend redirect only when keycloak base-url is blank")
-        void performLogout_whenKeycloakBaseUrlBlank_shouldFallbackToFrontendRedirect() {
-            SessionService serviceWithBlankBaseUrl = new SessionService(cookieService, props, "   ", REALM);
-
-            ResponseCookie clearAccessCookie = ResponseCookie.from(COOKIE_NAME, "")
-                    .httpOnly(true)
-                    .secure(true)
-                    .path("/")
-                    .maxAge(0)
-                    .build();
-
-            when(cookieService.clearAuthCookie()).thenReturn(clearAccessCookie);
-
-            when(props.getRedirectAfterLogout()).thenReturn(REDIRECT_AFTER_LOGOUT);
-            when(props.getCookieName()).thenReturn(COOKIE_NAME);
-            when(props.isCookieSecure()).thenReturn(true);
-            when(props.getCookieSameSite()).thenReturn("Lax");
-            when(props.getCookieDomain()).thenReturn(null);
-
-            serviceWithBlankBaseUrl.performLogout(exchange).block();
-
-            assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FOUND);
-            assertThat(exchange.getResponse().getHeaders().getLocation()).isEqualTo(URI.create(REDIRECT_AFTER_LOGOUT));
-        }
-
-        @Test
-        @DisplayName("should fallback to frontend redirect only when realm is blank")
-        void performLogout_whenRealmBlank_shouldFallbackToFrontendRedirect() {
-            SessionService serviceWithBlankRealm = new SessionService(cookieService, props, KEYCLOAK_BASE_URL, "   ");
-
-            ResponseCookie clearAccessCookie = ResponseCookie.from(COOKIE_NAME, "")
-                    .httpOnly(true)
-                    .secure(true)
-                    .path("/")
-                    .maxAge(0)
-                    .build();
-
-            when(cookieService.clearAuthCookie()).thenReturn(clearAccessCookie);
-
-            when(props.getRedirectAfterLogout()).thenReturn(REDIRECT_AFTER_LOGOUT);
-            when(props.getCookieName()).thenReturn(COOKIE_NAME);
-            when(props.isCookieSecure()).thenReturn(true);
-            when(props.getCookieSameSite()).thenReturn("Lax");
-            when(props.getCookieDomain()).thenReturn(null);
-
-            serviceWithBlankRealm.performLogout(exchange).block();
-
-            assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FOUND);
-            assertThat(exchange.getResponse().getHeaders().getLocation()).isEqualTo(URI.create(REDIRECT_AFTER_LOGOUT));
         }
     }
 }
