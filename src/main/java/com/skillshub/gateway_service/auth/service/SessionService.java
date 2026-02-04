@@ -3,11 +3,13 @@ package com.skillshub.gateway_service.auth.service;
 import com.skillshub.gateway_service.auth.AuthCookieProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
@@ -22,7 +24,6 @@ import java.time.Duration;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SessionService {
 
     /**
@@ -39,6 +40,21 @@ public class SessionService {
 
     private final CookieService cookieService;
     private final AuthCookieProperties props;
+
+    private final String keycloakBaseUrl;
+    private final String realm;
+
+    public SessionService(
+            CookieService cookieService,
+            AuthCookieProperties props,
+            @Value("${app.keycloak.base-url}") String keycloakBaseUrl,
+            @Value("${app.keycloak.realm}") String realm
+    ) {
+        this.cookieService = cookieService;
+        this.props = props;
+        this.keycloakBaseUrl = trimTrailingSlash(keycloakBaseUrl);
+        this.realm = realm;
+    }
 
     /**
      * START LOGIN (Frontend calls /api/auth/login)
@@ -97,9 +113,6 @@ public class SessionService {
         return response.setComplete();
     }
 
-    /**
-     * LOGOUT → Clear cookies → Redirect to frontend
-     */
     public Mono<Void> performLogout(ServerWebExchange exchange) {
         log.info("🔓 Logout requested → Clearing cookies…");
 
@@ -118,7 +131,6 @@ public class SessionService {
 
         return response.setComplete();
     }
-
     private ResponseCookie createRefreshTokenCookie(String refreshToken) {
 
         String refreshCookieName = props.getCookieName() + REFRESH_COOKIE_SUFFIX;
@@ -156,5 +168,15 @@ public class SessionService {
         }
 
         return builder.build();
+    }
+
+    private String trimTrailingSlash(String s) {
+        if (s == null) {
+            return "";
+        }
+        if (s.endsWith("/")) {
+            return s.substring(0, s.length() - 1);
+        }
+        return s;
     }
 }

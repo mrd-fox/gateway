@@ -89,25 +89,22 @@ public class AuthCookieWebFilter implements WebFilter {
 
         HttpCookie accessCookie = request.getCookies().getFirst(accessCookieName);
         if (accessCookie == null || accessCookie.getValue().isBlank()) {
-            // No session -> proceed as anonymous
             return chain.filter(exchange);
         }
 
         String accessToken = accessCookie.getValue();
 
-        // 1) Try normal JWT validation
         Map<String, Object> claims;
         try {
             claims = jwtDecoderService.decodeJwt(accessToken);
             return continueAuthenticated(exchange, chain, claims);
         } catch (Exception e) {
             if (!isExpiredJwt(e)) {
-                log.warn("⚠️ Invalid JWT cookie (not expired). Will clear cookies and return 401. reason={}", safeMsg(e));
+                log.warn("⚠️ Invalid JWT cookie (not expired). Will clear cookies and return 401. reason={}", safeMsgDeep(e));
                 return clearCookiesAndUnauthorized(exchange);
             }
         }
 
-        // 2) If expired -> try refresh
         HttpCookie refreshCookie = request.getCookies().getFirst(refreshCookieName);
         if (refreshCookie == null || refreshCookie.getValue().isBlank()) {
             log.info("🔒 Access token expired and no refresh token found -> 401");
@@ -115,18 +112,17 @@ public class AuthCookieWebFilter implements WebFilter {
         }
 
         String refreshToken = refreshCookie.getValue();
-
+        log.info("🔄 Refresh attempt");
         return refreshAccessToken(refreshToken)
                 .flatMap(tokenResponse -> {
                     String newAccessToken = (String) tokenResponse.get("access_token");
-                    String newRefreshToken = (String) tokenResponse.get("refresh_token"); // may be null if no rotation
+                    String newRefreshToken = (String) tokenResponse.get("refresh_token");
 
                     if (newAccessToken == null || newAccessToken.isBlank()) {
                         log.warn("⚠️ Refresh response missing access_token -> 401");
                         return clearCookiesAndUnauthorized(exchange);
                     }
 
-                    // Rewrite cookies
                     ResponseCookie newAccessCookie = cookieService.createAuthCookie(newAccessToken);
                     exchange.getResponse().addCookie(newAccessCookie);
 
@@ -135,21 +131,22 @@ public class AuthCookieWebFilter implements WebFilter {
                         exchange.getResponse().addCookie(rtCookie);
                     }
 
-                    // Decode new token and continue authenticated
                     Map<String, Object> refreshedClaims;
                     try {
                         refreshedClaims = jwtDecoderService.decodeJwt(newAccessToken);
                     } catch (Exception ex) {
-                        log.warn("⚠️ Refreshed access token invalid -> 401. reason={}", safeMsg(ex));
+                        log.warn("⚠️ Refreshed access token invalid -> 401. reason={}", safeMsgDeep(ex));
                         return clearCookiesAndUnauthorized(exchange);
                     }
 
+                    log.info("✅ Refresh success (cookies rewritten)");
                     return continueAuthenticated(exchange, chain, refreshedClaims);
                 })
                 .onErrorResume(err -> {
-                    log.info("🔒 Refresh failed -> forcing re-login. reason={}", safeMsg(err));
+                    log.info("🔒 Refresh failed -> forcing re-login. reason={}", safeMsgDeep(err));
                     return clearCookiesAndUnauthorized(exchange);
                 });
+
     }
 
     private boolean shouldBypass(PathContainer path) {
@@ -225,11 +222,9 @@ public class AuthCookieWebFilter implements WebFilter {
 
         ServerHttpResponse response = exchange.getResponse();
 
-        // Clear AT cookie using existing service
         ResponseCookie clearAccess = cookieService.clearAuthCookie();
         response.addCookie(clearAccess);
 
-        // Clear RT cookie (same flags as props)
         String refreshCookieName = props.getCookieName() + REFRESH_COOKIE_SUFFIX;
         ResponseCookie clearRefresh = clearRefreshTokenCookie(refreshCookieName);
         response.addCookie(clearRefresh);
@@ -246,7 +241,6 @@ public class AuthCookieWebFilter implements WebFilter {
                         .secure(props.isCookieSecure())
                         .path("/")
                         .sameSite(props.getCookieSameSite())
-                        // We intentionally keep RT cookie long enough; Keycloak session policy remains the real limiter
                         .maxAge(7 * 24 * 60 * 60);
 
         if (props.getCookieDomain() != null && !props.getCookieDomain().isBlank()) {
@@ -273,9 +267,42 @@ public class AuthCookieWebFilter implements WebFilter {
         return builder.build();
     }
 
-    private boolean isExpiredJwt(Exception e) {
-        String msg = safeMsg(e);
-        return msg.contains("Expired JWT token");
+    private boolean isExpiredJwt(Throwable t) {
+        int depth = 0;
+        Throwable cur = t;
+
+        while (cur != null && depth < 10) {
+            String msg = safeMsg(cur);
+            if (!msg.isBlank() && msg.contains("Expired JWT token")) {
+                return true;
+            }
+            cur = cur.getCause();
+            depth++;
+        }
+
+        return false;
+    }
+
+    private String safeMsgDeep(Throwable t) {
+        if (t == null) {
+            return "";
+        }
+
+        Throwable root = t;
+        int depth = 0;
+        while (root.getCause() != null && depth < 10) {
+            root = root.getCause();
+            depth++;
+        }
+
+        String top = safeMsg(t);
+        String bottom = safeMsg(root);
+
+        if (bottom.isBlank() || bottom.equals(top)) {
+            return top;
+        }
+
+        return top + " (rootCause=" + bottom + ")";
     }
 
     private String safeMsg(Throwable t) {

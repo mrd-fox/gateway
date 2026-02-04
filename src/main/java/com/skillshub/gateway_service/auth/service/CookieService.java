@@ -26,11 +26,11 @@ public class CookieService {
     }
 
     public ResponseCookie createAuthCookie(String accessToken) {
-
         ResponseCookie.ResponseCookieBuilder builder =
                 ResponseCookie.from(props.getCookieName(), accessToken)
                         .httpOnly(true)
-                        .secure(true)
+//                        .secure(true)
+                        .secure(props.isCookieSecure())
                         .path("/")
                         .sameSite(props.getCookieSameSite())
                         .maxAge(props.getCookieMaxAge());
