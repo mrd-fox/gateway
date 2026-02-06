@@ -17,7 +17,6 @@ import java.util.Map;
 public class CookieService {
 
     private final AuthCookieProperties props;
-
     private final JwtDecoderService jwtDecoderService;
 
     @PostConstruct
@@ -26,16 +25,16 @@ public class CookieService {
     }
 
     public ResponseCookie createAuthCookie(String accessToken) {
-
         ResponseCookie.ResponseCookieBuilder builder =
                 ResponseCookie.from(props.getCookieName(), accessToken)
                         .httpOnly(true)
-                        .secure(true)
+                        // Must match the deployment (HTTP vs HTTPS)
+                        .secure(props.isCookieSecure())
                         .path("/")
                         .sameSite(props.getCookieSameSite())
                         .maxAge(props.getCookieMaxAge());
 
-        // IMPORTANT : en local / docker → PAS de domain
+        // IMPORTANT: In local/docker we usually do not set a domain.
         if (props.getCookieDomain() != null && !props.getCookieDomain().isBlank()) {
             builder.domain(props.getCookieDomain());
         }
@@ -43,13 +42,12 @@ public class CookieService {
         return builder.build();
     }
 
-
     public ResponseCookie clearAuthCookie() {
-
         ResponseCookie.ResponseCookieBuilder builder =
                 ResponseCookie.from(props.getCookieName(), "")
                         .httpOnly(true)
-                        .secure(true)
+                        // MUST match createAuthCookie(), otherwise the browser won't delete the cookie.
+                        .secure(props.isCookieSecure())
                         .path("/")
                         .sameSite(props.getCookieSameSite())
                         .maxAge(0);
@@ -61,9 +59,7 @@ public class CookieService {
         return builder.build();
     }
 
-
     public Mono<Map<String, Object>> extractUserFromCookie(ServerWebExchange exchange) {
-
         var cookie = exchange.getRequest().getCookies().getFirst(props.getCookieName());
 
         if (cookie == null) {

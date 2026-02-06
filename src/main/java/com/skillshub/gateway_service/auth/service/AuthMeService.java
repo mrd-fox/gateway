@@ -15,7 +15,6 @@ import java.util.Map;
  * AuthMeService:
  * Returns authenticated user info extracted from the JWT
  * (already validated by JwtDecoderService and stored in SecurityContext).
- * <p>
  * Used by /api/auth/me route.
  */
 @Slf4j
@@ -25,20 +24,6 @@ public class AuthMeService {
 
     private final CookieService cookieService;
 
-    /**
-     * Extract user identity from the JWT stored in the auth cookie.
-     */
-    //works
-//    public Mono<Map<String, Object>> me(ServerWebExchange exchange) {
-//
-//        return cookieService.extractUserFromCookie(exchange)
-//                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized")))
-//                .map(claims -> Map.of(
-//                        "id", claims.getOrDefault("sub", "unknown"),
-//                        "email", claims.getOrDefault("email", "unknown"),
-//                        "roles", extractRoles(claims)
-//                ));
-//    }
     public Mono<Map<String, Object>> me(ServerWebExchange exchange) {
 
         return cookieService.extractUserFromCookie(exchange)

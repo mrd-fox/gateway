@@ -87,7 +87,7 @@ skillshub:
     cookie-domain: ""          # IMPORTANT : empty in local mode
     cookie-secure: ${COOKIE_SECURE:true}       # must be TRUE for  propagate cookie HTTPS
     cookie-same-site: ${COOKIE_SAME_SITE:None}  # required for OAuth2 redirect
-    cookie-max-age: ${COOKIE_MAX_AGE:86400}  #24h
+    cookie-max-age: ${COOKIE_MAX_AGE:1800}  #30 min
     redirect-after-login: ${AUTH_REDIRECT_AFTER_LOGIN:http://localhost:5173/}
     redirect-after-logout: ${AUTH_REDIRECT_AFTER_LOGOUT:http://localhost:5173/}
 app:

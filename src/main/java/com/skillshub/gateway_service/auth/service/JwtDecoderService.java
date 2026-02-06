@@ -37,18 +37,13 @@ public class JwtDecoderService {
 
     private static final long CACHE_DURATION_SECONDS = 300;
 
-    /**
-     * Decode and verify JWT produced by Keycloak.
-     */
     public Map<String, Object> decodeJwt(String token) {
 
         try {
             SignedJWT signedJWT = SignedJWT.parse(token);
 
-            // Fetch JWK set (cached)
             JWKSet jwkSet = fetchJwkSet();
 
-            // Find matching key
             JWK jwk = jwkSet.getKeyByKeyId(signedJWT.getHeader().getKeyID());
             if (jwk == null) {
                 throw new IllegalStateException("No matching JWK key found in Keycloak JWK set");
@@ -57,20 +52,17 @@ public class JwtDecoderService {
             RSAKey rsaKey = jwk.toRSAKey();
             JWSVerifier verifier = new RSASSAVerifier(rsaKey);
 
-            // Verify signature
             if (!signedJWT.verify(verifier)) {
                 throw new IllegalStateException("Invalid JWT signature");
             }
 
-            // Validate expiration
             Date exp = signedJWT.getJWTClaimsSet().getExpirationTime();
             if (exp != null && exp.before(new Date())) {
                 throw new IllegalStateException("Expired JWT token");
             }
 
-            // Validate issuer
             String tokenIssuer = signedJWT.getJWTClaimsSet().getIssuer();
-            if (!issuerUri.equals(tokenIssuer)) {
+            if (tokenIssuer == null || !issuerUri.equals(tokenIssuer)) {
                 throw new IllegalStateException("Invalid issuer: " + tokenIssuer);
             }
 
@@ -78,14 +70,14 @@ public class JwtDecoderService {
 
         } catch (ParseException e) {
             throw new IllegalStateException("Malformed JWT token", e);
+        } catch (IllegalStateException e) {
+            // Preserve validation messages (Expired JWT token, Invalid issuer, etc.)
+            throw e;
         } catch (Exception e) {
             throw new IllegalStateException("JWT processing error", e);
         }
     }
 
-    /**
-     * Load Keycloak JWK keys, cached 5 minutes.
-     */
     private synchronized JWKSet fetchJwkSet() throws Exception {
         Instant now = Instant.now();
 
