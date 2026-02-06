@@ -12,6 +12,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.ReactiveClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.net.URI;
 
@@ -36,6 +41,12 @@ class SessionServiceTest {
     @Mock
     private AuthCookieProperties props;
 
+    @Mock
+    private WebClient.Builder webClientBuilder;
+
+    @Mock
+    private ReactiveClientRegistrationRepository clientRegistrationRepository;
+
     private SessionService sessionService;
 
     private MockServerWebExchange exchange;
@@ -45,7 +56,29 @@ class SessionServiceTest {
         MockServerHttpRequest request = MockServerHttpRequest.get("/api/auth/login").build();
         exchange = MockServerWebExchange.from(request);
 
-        sessionService = new SessionService(cookieService, props, KEYCLOAK_BASE_URL, REALM);
+        // Mock WebClient.Builder to return itself for chaining
+        when(webClientBuilder.build()).thenReturn(WebClient.builder().build());
+
+        // Mock ReactiveClientRegistrationRepository to return a client registration
+        ClientRegistration clientRegistration = ClientRegistration.withRegistrationId("keycloak")
+                .clientId("gateway-service")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+                .authorizationUri("http://auth.skillshub.local:8085/realms/skillshub/protocol/openid-connect/auth")
+                .tokenUri("http://auth.skillshub.local:8085/realms/skillshub/protocol/openid-connect/token")
+                .build();
+
+        when(clientRegistrationRepository.findByRegistrationId("keycloak"))
+                .thenReturn(Mono.just(clientRegistration));
+
+        sessionService = new SessionService(
+                cookieService,
+                props,
+                webClientBuilder,
+                clientRegistrationRepository,
+                KEYCLOAK_BASE_URL,
+                REALM
+        );
     }
 
     @Nested

@@ -12,6 +12,7 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -20,14 +21,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * This filter runs AFTER authentication has been resolved by AuthCookieWebFilter.
- * Its job is to propagate user identity to backend microservices via HTTP headers:
- *
+ * This filter propagates user identity to backend services via headers:
  * - X-User-Id
  * - X-User-Email
  * - X-User-Roles
  *
- * Backends are IAM-agnostic → they only trust Gateway metadata.
+ * IMPORTANT:
+ * - /api/public/** must NEVER be blocked by auth (no 401, no redirect flow)
+ * - Only protected backend routes should require a SecurityContext
  */
 @Slf4j
 @Component
@@ -44,6 +45,11 @@ public class XUserHeadersFilter implements GlobalFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String path = exchange.getRequest().getURI().getPath();
+
+        // Public endpoints must never be blocked, even if no SecurityContext exists
+        if (isPublicApi(path)) {
+            return chain.filter(exchange);
+        }
 
         if (shouldBypass(path)) {
             return chain.filter(exchange);
@@ -88,23 +94,33 @@ public class XUserHeadersFilter implements GlobalFilter {
                     return chain.filter(exchange.mutate().request(mutated).build());
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    // No SecurityContext -> not authenticated -> never forward to backend.
+                    // No SecurityContext -> not authenticated -> do not forward to protected backend routes
                     log.debug("No SecurityContext -> 401. path={}", path);
                     return unauthorized(exchange);
                 }));
     }
 
+    private boolean isPublicApi(String path) {
+        return path != null && path.startsWith("/api/public/");
+    }
+
     private boolean shouldBypass(String path) {
+        if (path == null) {
+            return true;
+        }
+
         if (!path.startsWith("/api/")) {
             return true;
         }
 
+        // Auth endpoints and OAuth2 endpoints must never be mutated by this filter
         if (path.startsWith("/api/auth/")
                 || path.startsWith("/login/oauth2/")
                 || path.startsWith("/oauth2/")) {
             return true;
         }
 
+        // User-service calls may have their own contract and should not be enriched here
         if (path.startsWith("/api/users/")) {
             return true;
         }
@@ -120,6 +136,12 @@ public class XUserHeadersFilter implements GlobalFilter {
 
         Object principal = authentication.getPrincipal();
 
+        // Standard Spring Security OAuth2 / OIDC principal type
+        if (principal instanceof OAuth2User oauth2User) {
+            return oauth2User.getAttributes();
+        }
+
+        // Fallback (rare cases)
         if (principal instanceof Map<?, ?> map) {
             return (Map<String, Object>) map;
         }
@@ -152,7 +174,7 @@ public class XUserHeadersFilter implements GlobalFilter {
                 return List.of("STUDENT");
             }
 
-            Object rolesObj = ((Map<?, ?>) realmAccess).get("roles");
+            Object rolesObj = realmAccess.get("roles");
             if (!(rolesObj instanceof List<?> rolesList)) {
                 return List.of("STUDENT");
             }

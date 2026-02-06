@@ -5,9 +5,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.server.reactive.ServerHttpResponse;
+import org.springframework.security.oauth2.client.registration.ReactiveClientRegistrationRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
@@ -20,22 +24,17 @@ import java.time.Duration;
  *
  * - start login (redirect to Keycloak)
  * - handle Keycloak callback (set cookies, redirect)
- * - logout (clear cookies, redirect)
+ * - logout:
+ *   - BACKCHANNEL logout to Keycloak (no UI) using refresh_token
+ *   - clear cookies
+ *   - redirect frontend
  */
 @Slf4j
 @Service
 public class SessionService {
 
-    /**
-     * Refresh cookie name is derived from the access cookie name to avoid adding config for now.
-     * Example: SKILLSHUB_AUTH -> SKILLSHUB_AUTH_RT
-     */
     private static final String REFRESH_COOKIE_SUFFIX = "_RT";
 
-    /**
-     * We set refresh cookie max-age to 7 days to support "remember me" sessions.
-     * Even if the cookie remains longer, Keycloak will stop issuing refreshed tokens once SSO session expires.
-     */
     private static final Duration REFRESH_COOKIE_MAX_AGE = Duration.ofDays(7);
 
     private final CookieService cookieService;
@@ -44,9 +43,15 @@ public class SessionService {
     private final String keycloakBaseUrl;
     private final String realm;
 
+    private final String gatewayClientId;
+
+    private final WebClient webClient;
+
     public SessionService(
             CookieService cookieService,
             AuthCookieProperties props,
+            WebClient.Builder webClientBuilder,
+            ReactiveClientRegistrationRepository clientRegistrationRepository,
             @Value("${app.keycloak.base-url}") String keycloakBaseUrl,
             @Value("${app.keycloak.realm}") String realm
     ) {
@@ -54,12 +59,17 @@ public class SessionService {
         this.props = props;
         this.keycloakBaseUrl = trimTrailingSlash(keycloakBaseUrl);
         this.realm = realm;
+        this.webClient = webClientBuilder.build();
+
+        // English comment: retrieve the OAuth client-id from Spring registration (keycloak)
+        // This keeps config single-sourced (application.yml -> spring.security.oauth2.client.registration.keycloak.client-id)
+        this.gatewayClientId = clientRegistrationRepository
+                .findByRegistrationId("keycloak")
+                .map(reg -> reg.getClientId())
+                .blockOptional()
+                .orElse("gateway-service");
     }
 
-    /**
-     * START LOGIN (Frontend calls /api/auth/login)
-     * Delegates to Spring Security OAuth2 login mechanism.
-     */
     public Mono<Void> performLogin(ServerWebExchange exchange) {
         log.info("➡️  Starting OAuth2 login: redirecting to Keycloak...");
         ServerHttpResponse response = exchange.getResponse();
@@ -70,10 +80,6 @@ public class SessionService {
         return response.setComplete();
     }
 
-    /**
-     * LOGIN SUCCESS HANDLER (Spring Security already did the OAuth2 flow)
-     * We create the cookies (access + refresh) and redirect to frontend.
-     */
     public Mono<Void> handleLoginSuccess(String accessToken, String refreshToken, ServerWebExchange exchange) {
 
         if (accessToken == null || accessToken.isBlank()) {
@@ -84,7 +90,6 @@ public class SessionService {
 
         log.info("🔐 OAuth2 login OK → Creating session cookies… refreshTokenPresent={}", refreshToken != null);
 
-        // Access token cookie (existing behavior)
         ResponseCookie accessCookie = cookieService.createAuthCookie(accessToken);
 
         if (accessCookie == null) {
@@ -96,12 +101,10 @@ public class SessionService {
         ServerHttpResponse response = exchange.getResponse();
         response.addCookie(accessCookie);
 
-        // Refresh token cookie (new behavior)
         if (refreshToken != null && !refreshToken.isBlank()) {
             ResponseCookie refreshCookie = createRefreshTokenCookie(refreshToken);
             response.addCookie(refreshCookie);
         } else {
-            // Without refresh token, the user will be forced to re-login when access token expires.
             log.warn("⚠️ No refresh token received from Keycloak. Session will not be refreshable.");
         }
 
@@ -113,24 +116,70 @@ public class SessionService {
         return response.setComplete();
     }
 
+    /**
+     * Logout requirements:
+     * - NO Keycloak UI confirmation
+     * - User lands directly on public page
+     *
+     * Strategy:
+     * 1) Backchannel POST to Keycloak logout endpoint with refresh_token
+     *    -> Keycloak session is terminated server-side
+     * 2) Clear Skillshub cookies
+     * 3) Redirect to public page
+     */
     public Mono<Void> performLogout(ServerWebExchange exchange) {
-        log.info("🔓 Logout requested → Clearing cookies…");
+        log.info("🔓 Logout requested → Backchannel Keycloak logout + clearing cookies…");
 
-        ServerHttpResponse response = exchange.getResponse();
+        String refreshCookieName = props.getCookieName() + REFRESH_COOKIE_SUFFIX;
+        var refreshCookie = exchange.getRequest().getCookies().getFirst(refreshCookieName);
+        String refreshToken = refreshCookie != null ? refreshCookie.getValue() : null;
 
-        ResponseCookie clearAccessCookie = cookieService.clearAuthCookie();
-        response.addCookie(clearAccessCookie);
+        Mono<Void> keycloakLogoutMono = Mono.empty();
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            keycloakLogoutMono = backchannelLogoutKeycloak(refreshToken)
+                    .doOnSuccess(v -> log.info("✅ Keycloak backchannel logout OK"))
+                    .onErrorResume(e -> {
+                        // English comment: do not block user logout UX if Keycloak call fails; we still clear cookies.
+                        log.warn("⚠️ Keycloak backchannel logout failed: {}", e.getMessage());
+                        return Mono.empty();
+                    });
+        } else {
+            log.warn("⚠️ No refresh token cookie found → skipping Keycloak backchannel logout (cookies will still be cleared).");
+        }
 
-        ResponseCookie clearRefreshCookie = clearRefreshTokenCookie();
-        response.addCookie(clearRefreshCookie);
+        return keycloakLogoutMono.then(Mono.defer(() -> {
+            ServerHttpResponse response = exchange.getResponse();
 
-        log.info("➡️  Redirecting user after logout: {}", props.getRedirectAfterLogout());
+            ResponseCookie clearAccessCookie = cookieService.clearAuthCookie();
+            response.addCookie(clearAccessCookie);
 
-        response.setStatusCode(HttpStatus.FOUND);
-        response.getHeaders().setLocation(URI.create(props.getRedirectAfterLogout()));
+            ResponseCookie clearRefreshCookie = clearRefreshTokenCookie();
+            response.addCookie(clearRefreshCookie);
 
-        return response.setComplete();
+            log.info("➡️  Redirecting user after logout: {}", props.getRedirectAfterLogout());
+
+            response.setStatusCode(HttpStatus.FOUND);
+            response.getHeaders().setLocation(URI.create(props.getRedirectAfterLogout()));
+
+            return response.setComplete();
+        }));
     }
+
+    private Mono<Void> backchannelLogoutKeycloak(String refreshToken) {
+        // Keycloak endpoint: /realms/{realm}/protocol/openid-connect/logout
+        String logoutUrl = keycloakBaseUrl + "/realms/" + realm + "/protocol/openid-connect/logout";
+
+        return webClient
+                .post()
+                .uri(logoutUrl)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData("client_id", gatewayClientId)
+                        .with("refresh_token", refreshToken))
+                .retrieve()
+                .toBodilessEntity()
+                .then();
+    }
+
     private ResponseCookie createRefreshTokenCookie(String refreshToken) {
 
         String refreshCookieName = props.getCookieName() + REFRESH_COOKIE_SUFFIX;
@@ -143,7 +192,6 @@ public class SessionService {
                         .sameSite(props.getCookieSameSite())
                         .maxAge(REFRESH_COOKIE_MAX_AGE);
 
-        // IMPORTANT: In local/docker we do not set domain
         if (props.getCookieDomain() != null && !props.getCookieDomain().isBlank()) {
             builder.domain(props.getCookieDomain());
         }
