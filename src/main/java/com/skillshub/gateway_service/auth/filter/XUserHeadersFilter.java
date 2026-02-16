@@ -44,9 +44,10 @@ public class XUserHeadersFilter implements GlobalFilter {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+
         String path = exchange.getRequest().getURI().getPath();
 
-        // Public endpoints must never be blocked, even if no SecurityContext exists
+        // Public endpoints must never be blocked
         if (isPublicApi(path)) {
             return chain.filter(exchange);
         }
@@ -55,16 +56,19 @@ public class XUserHeadersFilter implements GlobalFilter {
             return chain.filter(exchange);
         }
 
-        String existingUserId = exchange.getRequest().getHeaders().getFirst(HEADER_USER_ID);
-        if (!isBlank(existingUserId)) {
-            return chain.filter(exchange);
-        }
+        // 🔴 MODIFIED: Remove bypass that trusted client-supplied X-User-Id
+        // BEFORE (removed):
+        // String existingUserId = exchange.getRequest().getHeaders().getFirst(HEADER_USER_ID);
+        // if (!isBlank(existingUserId)) {
+        //     return chain.filter(exchange);
+        // }
 
-        log.info("🔥 XUserHeadersFilter HIT path={}", path);
+        log.debug("XUserHeadersFilter HIT path={}", path);
 
         return ReactiveSecurityContextHolder.getContext()
                 .map(securityContext -> securityContext.getAuthentication())
                 .flatMap(authentication -> {
+
                     Map<String, Object> claims = extractClaims(authentication);
 
                     if (claims == null) {
@@ -81,10 +85,26 @@ public class XUserHeadersFilter implements GlobalFilter {
                         return unauthorized(exchange);
                     }
 
-                    log.info("✅ claims sub={}", userId);
+                    // 🔴 MODIFIED: Detect spoof attempt (optional but recommended)
+                    boolean spoofAttempt =
+                            exchange.getRequest().getHeaders().containsKey(HEADER_USER_ID)
+                                    || exchange.getRequest().getHeaders().containsKey(HEADER_USER_EMAIL)
+                                    || exchange.getRequest().getHeaders().containsKey(HEADER_USER_ROLES);
 
+                    if (spoofAttempt) {
+                        log.warn("Client supplied X-User-* headers were ignored. path={}", path);
+                    }
+
+                    // 🔴 MODIFIED: Always remove client headers and overwrite with trusted values
                     ServerHttpRequest mutated = exchange.getRequest().mutate()
                             .headers(h -> {
+
+                                // Remove any incoming spoofed headers
+                                h.remove(HEADER_USER_ID);
+                                h.remove(HEADER_USER_EMAIL);
+                                h.remove(HEADER_USER_ROLES);
+
+                                // Inject trusted values from SecurityContext
                                 h.set(HEADER_USER_ID, userId);
                                 h.set(HEADER_USER_EMAIL, email != null ? email : "");
                                 h.set(HEADER_USER_ROLES, String.join(",", roles));
@@ -94,7 +114,6 @@ public class XUserHeadersFilter implements GlobalFilter {
                     return chain.filter(exchange.mutate().request(mutated).build());
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    // No SecurityContext -> not authenticated -> do not forward to protected backend routes
                     log.debug("No SecurityContext -> 401. path={}", path);
                     return unauthorized(exchange);
                 }));
