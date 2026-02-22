@@ -1,5 +1,6 @@
 package com.skillshub.gateway_service.user.client.dto;
 
+import java.util.List;
 import java.util.Set;
 
 public record InternalUserResponse(
@@ -14,7 +15,8 @@ public record InternalUserResponse(
         String phoneNumber,
         String postalCode,
         boolean active,
-        Set<RoleResponse> roles
+        Set<RoleResponse> roles,
+        List<String> enrolledCourseIds
 ) {
 
 }
