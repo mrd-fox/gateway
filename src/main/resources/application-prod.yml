@@ -1,0 +1,27 @@
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    org.springframework.cloud.gateway.handler.RoutePredicateHandlerMapping: INFO
+    org.springframework.security: INFO
+    org.springframework.security.oauth2: INFO
+    reactor.netty.http.server: INFO
+
+server:
+  port: ${SERVER_PORT:8080}
+
+skillshub:
+  auth:
+    # En prod-like: domaine cookie piloté par env (obligatoire)
+    cookie-domain: ${COOKIE_DOMAIN}
+    cookie-secure: ${COOKIE_SECURE:true}
+    cookie-same-site: ${COOKIE_SAME_SITE:None}
+    cookie-max-age: ${COOKIE_MAX_AGE:1800}
+
+    # Redirections prod-like (front public)
+    redirect-after-login: ${AUTH_REDIRECT_AFTER_LOGIN:https://skillshubdev.duckdns.org/}
+    redirect-after-logout: ${AUTH_REDIRECT_AFTER_LOGOUT:https://skillshubdev.duckdns.org/}
+
+app:
+  backend:
+    # En prod Docker: backend via DNS docker sur skillshub-net
+    base-url: ${BACKEND_URI:http://backend-service:10020}
