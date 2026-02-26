@@ -39,3 +39,4 @@ build/
 /env/**/local.env
 /env/**/docker-hybrid.env
 /env/**/docker-all.env
+/env/**/*.env
