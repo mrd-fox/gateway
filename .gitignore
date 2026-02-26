@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Envs ###
+
+*.env
+.env
+/env/**/local.env
+/env/**/docker-hybrid.env
+/env/**/docker-all.env

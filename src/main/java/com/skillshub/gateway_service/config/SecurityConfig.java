@@ -1,40 +1,55 @@
 package com.skillshub.gateway_service.config;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
+import org.springframework.security.oauth2.client.registration.ReactiveClientRegistrationRepository;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.authentication.RedirectServerAuthenticationEntryPoint;
 
+@Slf4j
 @Configuration
 @EnableWebFluxSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final ReactiveClientRegistrationRepository clientRegistrationRepository;
+    private final CustomOAuth2SuccessHandler customOAuth2SuccessHandler;
+
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
 
-        // Configure JWT converter if we need custom role mapping (optional)
-        JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
-        var reactiveJwtConverter = new ReactiveJwtAuthenticationConverterAdapter(jwtConverter);
-
         return http
-                // Disable CSRF because Gateway is stateless and acts as a proxy
+                .cors(Customizer.withDefaults())
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
 
-                // Authorize exchanges based on path
-                .authorizeExchange(exchange -> exchange
-                        .pathMatchers("/actuator/**").permitAll()   // health/info endpoints
-                        .pathMatchers("/public/**").permitAll()     // public routes if needed
-                        .anyExchange().authenticated()               // all others need valid JWT
+                .authorizeExchange(auth -> auth
+                        .pathMatchers(HttpMethod.OPTIONS).permitAll()
+                        .pathMatchers(
+                                "/api/auth/login",
+                                "/api/auth/logout",
+                                "/api/auth/me",
+                                "/actuator/**"
+                        ).permitAll()
+                        .anyExchange().permitAll()   // Le Gateway ne protège pas les routes
                 )
 
-                // Enable JWT authentication with Keycloak as the resource server
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveJwtConverter))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(
+                                new RedirectServerAuthenticationEntryPoint("/api/auth/login")
+                        )
                 )
 
-                // Build the final security chain
+                .oauth2Login(oauth -> oauth
+                        .clientRegistrationRepository(clientRegistrationRepository)
+                        .authenticationSuccessHandler(customOAuth2SuccessHandler)
+                )
+
                 .build();
     }
 }

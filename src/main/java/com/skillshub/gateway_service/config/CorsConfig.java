@@ -8,7 +8,6 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
-
 @Configuration
 public class CorsConfig {
 
@@ -16,36 +15,23 @@ public class CorsConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        //  Allowed origins (adjust depending on your environment)
-        config.setAllowedOrigins(List.of(
-                "http://localhost:5173",   // local frontend
-                "http://127.0.0.1:5173"
+        // ✅ Use allowedOriginPatterns for credentials support
+        config.setAllowedOriginPatterns(List.of(
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://host.docker.internal:5173"
         ));
-
-        //  Allowed HTTP methods
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-
-        //  Allowed headers
-        config.setAllowedHeaders(List.of(
-                "Authorization",
-                "Content-Type",
-                "X-Requested-With",
-                "Origin",
-                "Accept"
-        ));
-
-        //  Allow sending credentials (cookies, authorization headers)
+        config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
-
-        //  Expose custom headers (optional)
         config.setExposedHeaders(List.of(
+                "Authorization",
                 "X-User-Email",
                 "X-User-Roles",
                 "X-Service",
                 "X-Gateway"
         ));
 
-        // Apply configuration to all routes
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
 

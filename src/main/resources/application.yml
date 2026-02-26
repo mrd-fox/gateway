@@ -1,66 +1,101 @@
 spring:
   application:
     name: gateway-service
+
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
+    active: ${SPRING_PROFILES_ACTIVE:docker-hybrid}
 
   main:
     web-application-type: reactive
 
   security:
     oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8085/realms/skillshub}
-          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8085/realms/skillshub/protocol/openid-connect/certs}
+      client:
+        registration:
+          keycloak:
+            client-id: gateway-service
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope:
+              - openid
+              - profile
+              - email
+
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ISSUER_URI}
+            authorization-uri: ${KEYCLOAK_AUTHORIZATION_URI}
+            token-uri: ${KEYCLOAK_TOKEN_URI}
+            jwk-set-uri: ${KEYCLOAK_JWK_SET_URI}
+            user-info-uri: ${KEYCLOAK_USER_INFO_URI}
+            user-name-attribute: preferred_username
 
   cloud:
     config:
       enabled: false
-      discovery:
+      import-check:
         enabled: false
     gateway:
-      globalcors:
-        add-to-simple-url-handler-mapping: true
-        cors-configurations:
-          '[/**]':
-            allowedOrigins:
-              - "http://localhost:5173"
-            allowedMethods:
-              - GET
-              - POST
-              - PUT
-              - DELETE
-              - OPTIONS
-            allowedHeaders:
-              - "*"
-            allowCredentials: true
       default-filters:
         - AddResponseHeader=X-Gateway,Skillshub-Gateway
       routes:
+        - id: users-me-local
+          uri: forward:/api/users/me
+          order: -100
+          predicates:
+            - Path=/api/users/me
+            - Method=GET
+
+        - id: users-promote-to-tutor-local
+          uri: forward:/api/users/promote-to-tutor
+          order: -100
+          predicates:
+            - Path=/api/users/promote-to-tutor/**
+            - Method=POST
+
         - id: backend
-          uri: ${BACKEND_URI:http://localhost:8081}
+          uri: ${BACKEND_URI:http://localhost:10020}
+          order: 100
           predicates:
             - Path=/api/**
-          filters:
-            - PreserveHostHeader
-            - RewritePath=/api/(?<segment>.*), /${segment}
 
 server:
+  address: ${SERVER_ADDRESS:0.0.0.0}
   port: ${SERVER_PORT:8080}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info, gateway
   endpoint:
     health:
       show-details: always
 
 logging:
   level:
-    root: INFO
     org.springframework.cloud.gateway: DEBUG
-    org.springframework.security: INFO
-    com.skillshub.gateway: DEBUG
+    reactor.netty.http.server: INFO
+    org.springframework.cloud.gateway.handler.RoutePredicateHandlerMapping: TRACE
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: TRACE
+
+
+skillshub:
+  auth:
+    cookie-name: SKILLSHUB_AUTH
+    cookie-domain: ""          # IMPORTANT : empty in local mode
+    cookie-secure: ${COOKIE_SECURE:true}       # must be TRUE for  propagate cookie HTTPS
+    cookie-same-site: ${COOKIE_SAME_SITE:None}  # required for OAuth2 redirect
+    cookie-max-age: ${COOKIE_MAX_AGE:1800}  #30 min
+    redirect-after-login: ${AUTH_REDIRECT_AFTER_LOGIN:http://localhost:5173/}
+    redirect-after-logout: ${AUTH_REDIRECT_AFTER_LOGOUT:http://localhost:5173/}
+app:
+  backend:
+    base-url: ${BACKEND_URI:http://localhost:10020}
+  keycloak:
+    base-url: ${KEYCLOAK_BASE_URL}
+    realm: ${KEYCLOAK_REALM:skillshub}
+    admin:
+      client-id: ${KEYCLOAK_ADMIN_CLIENT_ID}
+      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
