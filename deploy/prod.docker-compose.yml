@@ -1,0 +1,24 @@
+version: "3.9"
+
+networks:
+  skillshub-net:
+    external: true
+    name: skillshub-net
+
+services:
+  gateway-service:
+    image: ghcr.io/mrd-fox/gateway:latest
+    container_name: gateway-service
+    restart: unless-stopped
+
+    env_file:
+      - ./envs/prod.env
+
+    # PAS de ports exposés ici
+    # Caddy reverse_proxy vers gateway-service:8080
+
+    expose:
+      - "8080"
+
+    networks:
+      - skillshub-net

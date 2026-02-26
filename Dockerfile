@@ -4,24 +4,20 @@ WORKDIR /app
 
 # Copy Maven configuration and resolve dependencies first (to cache layers)
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
+RUN mvn -B -ntp dependency:go-offline
 
 # Copy source code and build
 COPY src ./src
-RUN mvn clean package -DskipTests
+RUN mvn -B -ntp clean package -DskipTests
 
-# STEP 2 — Runtime stage
-FROM eclipse-temurin:21-jdk-alpine
+# STEP 2 — Runtime stage (lighter than JDK)
+FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 # Copy built JAR from previous stage
 COPY --from=builder /app/target/*.jar app.jar
 
-# Define environment variables (optional defaults)
-ENV SPRING_PROFILES_ACTIVE=prod
-ENV SERVER_PORT=8080
-
-# Expose the application port
+# Expose the application port (container listens on SERVER_PORT env, default 8080)
 EXPOSE 8080
 
 # Launch the gateway
