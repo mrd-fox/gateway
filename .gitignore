@@ -35,9 +35,7 @@ build/
 ### Envs ###
 
 *.env
-*.env.*
 .env
-.env.*
 /env/**/local.env
 /env/**/docker-hybrid.env
 /env/**/docker-all.env
