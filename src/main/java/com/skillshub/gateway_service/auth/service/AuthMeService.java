@@ -10,6 +10,8 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -28,40 +30,44 @@ public class AuthMeService {
 
         return ReactiveSecurityContextHolder.getContext()
                 .map(ctx -> ctx.getAuthentication())
-                .flatMap(this::extractUserFromAuthentication)
+                .flatMap(this::extractClaimsFromAuthentication)
+                .flatMap(claims -> {
+
+                    String id = (String) claims.get("sub");
+                    String email = (String) claims.get("email");
+
+                    if (id == null || email == null) {
+                        return unauthorized();
+                    }
+
+                    return Mono.just(Map.of(
+                            "id", id,
+                            "email", email,
+                            "roles", extractRoles(claims)
+                    ));
+                })
                 .switchIfEmpty(unauthorized());
     }
 
-    private Mono<Map<String, Object>> extractUserFromAuthentication(Authentication authentication) {
+    private Mono<Map<String, Object>> extractClaimsFromAuthentication(Authentication authentication) {
 
         if (authentication == null || !authentication.isAuthenticated()) {
-            return unauthorized();
+            return Mono.empty();
         }
 
         Object principal = authentication.getPrincipal();
         if (!(principal instanceof Map)) {
-            return unauthorized();
+            return Mono.empty();
         }
 
         @SuppressWarnings("unchecked")
         Map<String, Object> claims = (Map<String, Object>) principal;
 
         if (claims.isEmpty()) {
-            return unauthorized();
+            return Mono.empty();
         }
 
-        String id = (String) claims.get("sub");
-        String email = (String) claims.get("email");
-
-        if (id == null || email == null) {
-            return unauthorized();
-        }
-
-        return Mono.just(Map.of(
-                "id", id,
-                "email", email,
-                "roles", extractRoles(claims)
-        ));
+        return Mono.just(claims);
     }
 
     private Mono<Map<String, Object>> unauthorized() {
