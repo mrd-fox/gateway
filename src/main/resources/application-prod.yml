@@ -12,8 +12,9 @@ server:
 
 skillshub:
   auth:
-    # En prod-like: domaine cookie piloté par env (obligatoire)
-    cookie-domain: ${COOKIE_DOMAIN}
+    # En prod-like: domaine cookie piloté par env (vide = host-only, pas de Domain attr)
+    # IMPORTANT: duckdns.org est sur la PSL → Domain=.duckdns.org est rejeté par les navigateurs
+    cookie-domain: ${COOKIE_DOMAIN:}
     cookie-secure: ${COOKIE_SECURE:true}
     cookie-same-site: ${COOKIE_SAME_SITE:None}
     cookie-max-age: ${COOKIE_MAX_AGE:1800}
