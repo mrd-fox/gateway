@@ -1,8 +1,8 @@
 package com.skillshub.gateway_service.config;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
@@ -13,20 +13,21 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    @Value("${ALLOWED_ORIGIN_1:}")
-    private String allowedOrigin1;
+    private final Environment environment;
+
+    public CorsConfig(Environment environment) {
+        this.environment = environment;
+    }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        List<String> origins = new ArrayList<>(List.of(
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "http://host.docker.internal:5173"
-        ));
-        if (allowedOrigin1 != null && !allowedOrigin1.isBlank()) {
-            origins.add(allowedOrigin1);
+        List<String> origins = new ArrayList<>();
+        for (int i = 1; ; i++) {
+            String origin = environment.getProperty("ALLOWED_ORIGIN_" + i);
+            if (origin == null || origin.isBlank()) break;
+            origins.add(origin);
         }
         config.setAllowedOriginPatterns(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
